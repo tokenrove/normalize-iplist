@@ -36,3 +36,5 @@ Gemfile.lock
 .rvmrc
 
 /ext/Makefile
+/ext/*.o
+/ext/*.bundle

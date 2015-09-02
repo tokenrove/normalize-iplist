@@ -33,10 +33,10 @@ struct ip_and_mask read_textual_ip_address_and_optional_mask(char *p)
     }
 }
 
-            /* serialized = row[:ips].map do |cidr| */
-            /*   (ip, mask) = cidr.split('/') */
-            /*   (ip.split('.').map(&:to_i) << (mask || 32).to_i).pack('CCCCC') */
-            /* end.sort.join */
+/* serialized = row[:ips].map do |cidr| */
+/*   (ip, mask) = cidr.split('/') */
+/*   (ip.split('.').map(&:to_i) << (mask || 32).to_i).pack('CCCCC') */
+/* end.sort.join */
 /* Serialize an array of IPs as strings into a single string of big-endian
  * integers plus mask. */
 static VALUE serialize(VALUE self __attribute__((unused)), VALUE in) {
@@ -74,20 +74,19 @@ static void format_ip_and_mask(uint8_t *in, char *out)
 	snprintf(out, MAX_IP_FMT_LEN, "%hhu.%hhu.%hhu.%hhu/%hhu", in[0], in[1], in[2], in[3], in[4]);
 }
 
-      /* self.ips = ips.map { |ip| self.class.string_to_cidr(ip) }.uniq.sort.map { |ip| self.class.cidr_to_string(ip) } */
+/* self.ips = ips.map { |ip| self.class.string_to_cidr(ip) }.uniq.sort.map { |ip| self.class.cidr_to_string(ip) } */
 /* Normalize IP addresses, uniq and sort, return array. */
 static VALUE normalize_text(VALUE self, VALUE in) {
-    VALUE sorted_bin = serialize(self, in);
-    uint8_t *p = (uint8_t *)RSTRING_PTR(sorted_bin);
+    VALUE serialized = serialize(self, in);
+    VALUE sorted_bin = rb_string_value(&serialized);
+    uint8_t *p = (uint8_t *)RSTRING_PTR(sorted_bin), *e = p + RSTRING_LEN(sorted_bin);
     VALUE out = rb_ary_new();
-    size_t n = RSTRING_LEN(sorted_bin)/5;
-    if (n == 0) return out;
+    if (e-p <= 5) return out;
 
     char buf[MAX_IP_FMT_LEN+1] = {0};
     format_ip_and_mask(p, buf);
     rb_ary_push(out, rb_str_new2(buf));
-    p += 5;
-    for (size_t i = 1; i < n; ++i, p += 5) {
+    for (p += 5; p+5 <= e; p += 5) {
 	if (p[0] == p[-5] && p[1] == p[-4] && p[2] == p[-3] && p[3] == p[-2] && p[4] == p[-1])
 	    continue;
 	format_ip_and_mask(p, buf);
@@ -97,7 +96,6 @@ static VALUE normalize_text(VALUE self, VALUE in) {
 }
 
 void Init_normalize_iplist(void) {
-    /* VALUE cNormalizeIplist = rb_const_get(rb_cObject, rb_intern("NormalizeIPList")); */
     module = rb_define_module("NormalizeIPList");
     rb_define_module_function(module, "normalize_text", normalize_text, 1);
     rb_define_module_function(module, "serialize", serialize, 1);

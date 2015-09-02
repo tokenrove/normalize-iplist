@@ -39,7 +39,7 @@ struct ip_and_mask read_textual_ip_address_and_optional_mask(char *p)
             /* end.sort.join */
 /* Serialize an array of IPs as strings into a single string of big-endian
  * integers plus mask. */
-static VALUE serialize(VALUE self, VALUE in) {
+static VALUE serialize(VALUE self __attribute__((unused)), VALUE in) {
     if (TYPE(in) != T_ARRAY)
 	rb_raise(rb_eTypeError, "invalid type; serialize requires an array");
 

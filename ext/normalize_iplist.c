@@ -3,12 +3,6 @@
 
 static VALUE module;
 
-      /* self.ips = ips.map { |ip| self.class.string_to_cidr(ip) }.uniq.sort.map { |ip| self.class.cidr_to_string(ip) } */
-/* Normalize IP addresses, uniq and sort, in place */
-static VALUE normalize_text_bang(VALUE self, VALUE in) {
-    return Qnil;		/* not implemented */
-}
-
 static int compare_serialized(const void *a_, const void *b_)
 {
     const uint8_t *a = a_, *b = b_;
@@ -61,6 +55,8 @@ static VALUE serialize(VALUE self, VALUE in) {
 	if (ip_and_mask.mask < 8 || ip_and_mask.mask > 32)
 	    rb_raise(rb_eArgError, "invalid IP and mask");
 	uint32_t ip = ip_and_mask.ip;
+	uint8_t mask = ip_and_mask.mask;
+	ip &= (uint32_t)0xffffffff << (32-mask);
 	*out_p++ = ip>>24; *out_p++ = ip>>16; *out_p++ = ip>>8; *out_p++ = ip;
 	*out_p++ = ip_and_mask.mask;
     }
@@ -68,9 +64,41 @@ static VALUE serialize(VALUE self, VALUE in) {
     return out;
 }
 
+enum { MAX_IP_FMT_LEN = 4*4+4 };
+
+static void format_ip_and_mask(uint8_t *in, char *out)
+{
+    if (in[4] == 32)
+	snprintf(out, MAX_IP_FMT_LEN, "%hhu.%hhu.%hhu.%hhu", in[0], in[1], in[2], in[3]);
+    else
+	snprintf(out, MAX_IP_FMT_LEN, "%hhu.%hhu.%hhu.%hhu/%hhu", in[0], in[1], in[2], in[3], in[4]);
+}
+
+      /* self.ips = ips.map { |ip| self.class.string_to_cidr(ip) }.uniq.sort.map { |ip| self.class.cidr_to_string(ip) } */
+/* Normalize IP addresses, uniq and sort, return array. */
+static VALUE normalize_text(VALUE self, VALUE in) {
+    VALUE sorted_bin = serialize(self, in);
+    uint8_t *p = (uint8_t *)RSTRING_PTR(sorted_bin);
+    VALUE out = rb_ary_new();
+    size_t n = RSTRING_LEN(sorted_bin)/5;
+    if (n == 0) return out;
+
+    char buf[MAX_IP_FMT_LEN+1] = {0};
+    format_ip_and_mask(p, buf);
+    rb_ary_push(out, rb_str_new2(buf));
+    p += 5;
+    for (size_t i = 1; i < n; ++i, p += 5) {
+	if (p[0] == p[-5] && p[1] == p[-4] && p[2] == p[-3] && p[3] == p[-2] && p[4] == p[-1])
+	    continue;
+	format_ip_and_mask(p, buf);
+	rb_ary_push(out, rb_str_new2(buf));
+    }
+    return out;
+}
+
 void Init_normalize_iplist(void) {
     /* VALUE cNormalizeIplist = rb_const_get(rb_cObject, rb_intern("NormalizeIPList")); */
     module = rb_define_module("NormalizeIPList");
-    rb_define_module_function(module, "normalize_text!", normalize_text_bang, 1);
+    rb_define_module_function(module, "normalize_text", normalize_text, 1);
     rb_define_module_function(module, "serialize", serialize, 1);
 }

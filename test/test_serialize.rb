@@ -1,6 +1,6 @@
 require File.dirname(__FILE__) + "/helper.rb"
 
-class NormalizeIPListTest < Test::Unit::TestCase
+class NormalizeIPListSerializeTest < Test::Unit::TestCase
   def test_serialize_with_empty_array_is_empty
     assert_equal('', NormalizeIPList.serialize([]))
   end

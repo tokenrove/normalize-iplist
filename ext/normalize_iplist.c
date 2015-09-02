@@ -81,7 +81,7 @@ static VALUE normalize_text(VALUE self, VALUE in) {
     VALUE sorted_bin = rb_string_value(&serialized);
     uint8_t *p = (uint8_t *)RSTRING_PTR(sorted_bin), *e = p + RSTRING_LEN(sorted_bin);
     VALUE out = rb_ary_new();
-    if (e-p <= 5) return out;
+    if (e-p < 5) return out;
 
     char buf[MAX_IP_FMT_LEN+1] = {0};
     format_ip_and_mask(p, buf);

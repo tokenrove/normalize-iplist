@@ -18,9 +18,11 @@ struct ip_and_mask {
 
 struct ip_and_mask read_textual_ip_address_and_optional_mask(char *p)
 {
-    uint8_t a,b,c,d;
+    unsigned a,b,c,d;
     struct ip_and_mask ip_and_mask = {0};
-    int rv = sscanf(p, "%hhu.%hhu.%hhu.%hhu/%hhu", &a, &b, &c, &d, &ip_and_mask.mask);
+    int rv = sscanf(p, "%u.%u.%u.%u/%hhu", &a, &b, &c, &d, &ip_and_mask.mask);
+    if (a > 255 || b > 255 || c > 255 || d > 255 || ip_and_mask.mask > 32)
+	rv = 0;
     switch (rv) {
     case 4:
 	ip_and_mask.mask = 32;

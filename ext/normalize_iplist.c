@@ -41,7 +41,7 @@ struct ip_and_mask read_textual_ip_address_and_optional_mask(char *p)
  * integers plus mask. */
 static VALUE serialize(VALUE self __attribute__((unused)), VALUE in) {
     if (TYPE(in) != T_ARRAY)
-	rb_raise(rb_eTypeError, "invalid type; serialize requires an array");
+	rb_raise(rb_eTypeError, "serialize requires an array");
 
     size_t n = RARRAY_LEN(in);
     VALUE out = rb_str_new(NULL, n*5);
@@ -95,8 +95,41 @@ static VALUE normalize_text(VALUE self, VALUE in) {
     return out;
 }
 
+/* Returns an array of up to n (default 1) invalid IPs in the array of strings passed in. */
+static VALUE validate(int argc, VALUE *argv, VALUE self __attribute__((unused))) {
+    if (argc > 2 || argc == 0)
+	rb_raise(rb_eArgError, "wrong number of arguments");
+
+    VALUE in = argv[0];
+    if (TYPE(in) != T_ARRAY)
+	rb_raise(rb_eTypeError, "validate requires an array as the first argument");
+
+    long n = 1;
+    if (argc == 2) {
+	if (TYPE(argv[1]) != T_FIXNUM)
+	    rb_raise(rb_eTypeError, "n should be a fixnum");
+	n = NUM2INT(argv[1]);
+	if (n <= 0)
+	    rb_raise(rb_eArgError, "n must be strictly positive");
+    }
+
+    VALUE out = rb_ary_new();
+    for (long i = 0; i < RARRAY_LEN(in); ++i) {
+	VALUE ent = rb_ary_entry(in, i);
+	char *s = StringValueCStr(ent);
+	struct ip_and_mask ip_and_mask = read_textual_ip_address_and_optional_mask(s);
+	if (ip_and_mask.mask < 8 || ip_and_mask.mask > 32) {
+	    rb_ary_push(out, ent);
+	    if (RARRAY_LEN(out) >= n)
+		return out;
+	}
+    }
+    return out;
+}
+
 void Init_normalize_iplist(void) {
     module = rb_define_module("NormalizeIPList");
     rb_define_module_function(module, "normalize_text", normalize_text, 1);
     rb_define_module_function(module, "serialize", serialize, 1);
+    rb_define_module_function(module, "validate", validate, -1);
 }

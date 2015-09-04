@@ -76,23 +76,39 @@ static void format_ip_and_mask(uint8_t *in, char *out)
 	snprintf(out, MAX_IP_FMT_LEN, "%hhu.%hhu.%hhu.%hhu/%hhu", in[0], in[1], in[2], in[3], in[4]);
 }
 
+static uint8_t *coalesce_class_c(uint8_t *p, uint8_t *e)
+{
+    uint8_t *q = &p[5<<8];
+    if (q > e)
+	return p;
+    q -= 5;
+    if (32 == p[4] && 32 == q[4] && /* looks like they're all /32 */
+	0 == p[3] && 255 == q[3] && /* starts with .0, ends with .255 */
+	p[0] == q[0] &&	p[1] == q[1] &&	p[2] == q[2]) { /* otherwise match */
+	q[3] = 0;
+	q[4] = 24;
+	return q;
+    }
+    return p;
+}
+
 /* self.ips = ips.map { |ip| self.class.string_to_cidr(ip) }.uniq.sort.map { |ip| self.class.cidr_to_string(ip) } */
 /* Normalize IP addresses, uniq and sort, return array. */
 static VALUE normalize_text(VALUE self, VALUE in) {
     VALUE serialized = serialize(self, in);
     VALUE sorted_bin = rb_string_value(&serialized);
-    uint8_t *p = (uint8_t *)RSTRING_PTR(sorted_bin), *e = p + RSTRING_LEN(sorted_bin);
+    uint8_t *p = (uint8_t *)RSTRING_PTR(sorted_bin), *e = p + RSTRING_LEN(sorted_bin), *q = NULL;
     VALUE out = rb_ary_new();
     if (e-p < 5) return out;
 
     char buf[MAX_IP_FMT_LEN+1] = {0};
-    format_ip_and_mask(p, buf);
-    rb_ary_push(out, rb_str_new2(buf));
-    for (p += 5; p+5 <= e; p += 5) {
-	if (p[0] == p[-5] && p[1] == p[-4] && p[2] == p[-3] && p[3] == p[-2] && p[4] == p[-1])
+    for (; p+5 <= e; p += 5) {
+	p = coalesce_class_c(p, e);
+	if (q && p[0] == q[0] && p[1] == q[1] && p[2] == q[2] && p[3] == q[3] && p[4] == q[4])
 	    continue;
 	format_ip_and_mask(p, buf);
 	rb_ary_push(out, rb_str_new2(buf));
+	q = p;
     }
     return out;
 }

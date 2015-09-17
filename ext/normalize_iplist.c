@@ -76,20 +76,35 @@ static void format_ip_and_mask(uint8_t *in, char *out)
 	snprintf(out, MAX_IP_FMT_LEN, "%hhu.%hhu.%hhu.%hhu/%hhu", in[0], in[1], in[2], in[3], in[4]);
 }
 
-static uint8_t *coalesce_class_c(uint8_t *p, uint8_t *e)
+static uint8_t *coalesce_networks(uint8_t *p, uint8_t *e)
 {
-    uint8_t *q = &p[5<<8];
-    if (q > e)
-	return p;
-    q -= 5;
-    if (32 == p[4] && 32 == q[4] && /* looks like they're all /32 */
-	0 == p[3] && 255 == q[3] && /* starts with .0, ends with .255 */
-	p[0] == q[0] &&	p[1] == q[1] &&	p[2] == q[2]) { /* otherwise match */
-	q[3] = 0;
-	q[4] = 24;
-	return q;
+    if (32 != p[4])
+        return p;
+
+    uint8_t *q;
+    uint32_t start = p[0]<<24 | p[1]<<16 | p[2]<<8 | p[3];
+
+    size_t best = 0;
+    for (size_t n = 3; n < 32; best = n, ++n) {
+        if ((start & ((1<<n)-1)) != 0) break;
+        q = &p[5<<n];
+        if (q > e) break;
+        q -= 5;
+        if (32 != q[4]) break;
+        uint32_t this = q[0]<<24 | q[1]<<16 | q[2]<<8 | q[3];
+        if ((this-start) != (1<<n)-1) break;
     }
-    return p;
+
+    if (best == 0)
+        return p;
+
+    q = &p[5<<best];
+    q -= 5;
+    uint32_t this = q[0]<<24 | q[1]<<16 | q[2]<<8 | q[3];
+    this &= ~((1<<best)-1);
+    q[4] = 32-best;
+    q[0] = this>>24; q[1] = this>>16; q[2] = this>>8; q[3] = this;
+    return q;
 }
 
 /* self.ips = ips.map { |ip| self.class.string_to_cidr(ip) }.uniq.sort.map { |ip| self.class.cidr_to_string(ip) } */
@@ -103,7 +118,7 @@ static VALUE normalize_text(VALUE self, VALUE in) {
 
     char buf[MAX_IP_FMT_LEN+1] = {0};
     for (; p+5 <= e; p += 5) {
-	p = coalesce_class_c(p, e);
+	p = coalesce_networks(p, e);
 	if (q && p[0] == q[0] && p[1] == q[1] && p[2] == q[2] && p[3] == q[3] && p[4] == q[4])
 	    continue;
 	format_ip_and_mask(p, buf);

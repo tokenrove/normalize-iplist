@@ -37,21 +37,25 @@ class NormalizeIPListNormalizeTextTest < Test::Unit::TestCase
                  NormalizeIPList.normalize_text(['1.2.3.4', '10.0.0.0/8', '3.3.3.3/32', '1.2.0.0/16']))
   end
 
-  def test_normalize_coalesces_class_cs
-    assert_equal(['10.0.0.0/24', '10.0.1.0/24', '10.0.2.0/24', '10.0.3.0/24'],
+  def test_normalize_coalesces_networks
+    assert_equal(['10.0.0.0/22'],
                  NormalizeIPList.normalize_text(IPAddr.new('10.0.0.0/22').to_range.to_a.map(&:to_s)))
   end
 
-  def test_normalize_does_not_coalesce_class_c_with_missing_element
+  def test_normalize_does_not_coalesce_into_complete_class_c_with_missing_element
     ips = IPAddr.new('192.168.1.0/24').to_range.to_a.map(&:to_s) - ['192.168.1.42'] + ['192.168.2.0']
-    assert_equal(ips,
-                 NormalizeIPList.normalize_text(ips))
+    assert_equal(expand(ips), expand(NormalizeIPList.normalize_text(ips)))
+  end
+
+  def expand(ips)
+    ips.map { |s| IPAddr.new(s).to_range.to_a.map(&:to_s) }.flatten
   end
 
   def test_normalize_does_not_coalesce_class_c_with_mask_element
     ips = IPAddr.new('192.168.1.0/24').to_range.to_a.map(&:to_s)
     ips[10] = '192.168.1.10/24'
-    assert_equal(['192.168.1.0/24'] + ips - ['192.168.1.10/24'], NormalizeIPList.normalize_text(ips))
+    assert_equal(expand(['192.168.1.0/24'])+(expand(['192.168.1.0/24'])-['192.168.1.10']),
+                 expand(NormalizeIPList.normalize_text(ips)))
   end
 
   def test_normalize_uniqs_adjacent_discovered_class_cs
@@ -61,5 +65,4 @@ class NormalizeIPListNormalizeTextTest < Test::Unit::TestCase
     ips << '192.168.1.0/24'
     assert_equal(['192.168.1.0/24'], NormalizeIPList.normalize_text(ips))
   end
-
 end

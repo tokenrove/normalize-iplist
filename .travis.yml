@@ -1,0 +1,3 @@
+language: ruby
+install: gem install rake-compiler
+script: rake build test

@@ -28,7 +28,7 @@ class NormalizeIPListNormalizeTextTest < Test::Unit::TestCase
     assert_equal(['10.0.0.1'],
                  NormalizeIPList.normalize_text(['10.0.0.1']))
   end
-  
+
   def test_normalize_with_various_wellformed_ips_succeeds
     assert_equal(['1.2.0.0/16',
                   '1.2.3.4',

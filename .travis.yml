@@ -1,4 +1,13 @@
+sudo: false
 language: ruby
 install: bundle install
 script: rake build test
+env:
+  - CC=gcc-4.9
 # also, set CODECLIMATE_REPO_TOKEN in the environment.
+addons:
+  apt:
+    sources:
+      - ubuntu-toolchain-r-test
+    packages:
+      - gcc-4.9

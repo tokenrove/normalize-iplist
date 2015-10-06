@@ -50,4 +50,8 @@ class NormalizeIPListValidateTest < Test::Unit::TestCase
     assert_equal([],
                  NormalizeIPList.validate(['1.2.3.4', '10.0.0.0/8', '3.3.3.3/32', '1.2.0.0/16'], 3))
   end
+
+  def test_validate_permits_dumb_single_entry_ranges
+    assert_equal([], NormalizeIPList.validate(['4.0.0.0,4.0.0.0']))
+  end
 end

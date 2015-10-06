@@ -70,7 +70,7 @@ static struct ip read_textual_ip_line(const char *p)
         ip.first = dq;
         p = read_dotted_quad(p, &ip.last);
         if (NULL == p || *p) return ip;
-        if (ip.last <= ip.first) return ip;
+        if (ip.last < ip.first) return ip;
         ip.type = ADDRESS_RANGE;
         break;
     case '/':

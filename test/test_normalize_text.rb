@@ -89,4 +89,9 @@ class NormalizeIPListNormalizeTextTest < Test::Unit::TestCase
       end
     end
   end
+
+
+  def test_normalize_permits_dumb_single_entry_ranges
+    assert_equal(['4.0.0.0'], NormalizeIPList.normalize_text(['4.0.0.0,4.0.0.0']))
+  end
 end

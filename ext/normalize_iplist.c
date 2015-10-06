@@ -11,64 +11,139 @@ static int compare_serialized(const void *a_, const void *b_)
     return 0;
 }
 
-struct ip_and_mask {
-    uint32_t ip;
-    uint8_t mask;
+struct ip {
+    enum { INVALID_ADDRESS = 0, SINGLE_ADDRESS, ADDRESS_RANGE } type;
+    union {
+        struct {
+            uint32_t ip;
+            uint8_t mask;
+        };
+        struct {
+            uint32_t first, last;
+        };
+    };
 };
 
-struct ip_and_mask read_textual_ip_address_and_optional_mask(char *p)
+static const char *read_byte(const char *p, uint8_t *val)
 {
-    unsigned a,b,c,d;
-    struct ip_and_mask ip_and_mask = {0};
-    int rv = sscanf(p, "%u.%u.%u.%u/%hhu", &a, &b, &c, &d, &ip_and_mask.mask);
-    if (a > 255 || b > 255 || c > 255 || d > 255 || ip_and_mask.mask > 32)
-        rv = 0;
-    switch (rv) {
-    case 4:
-        ip_and_mask.mask = 32;
-    case 5:
-        ip_and_mask.ip = a<<24 | b<<16 | c<<8 | d;
-        return ip_and_mask;
-    default:
-        ip_and_mask.mask = 0;
-        return ip_and_mask;
+    if (!p || *p < '0' || *p > '9') return NULL;
+
+    unsigned value = 0, digit;
+    while (*p >= '0' && *p <= '9') {
+        digit = (*p++) - '0';
+        value = 10*value + digit;
+        if (value > 255) return NULL;
     }
+    *val = value;
+    return p;
 }
 
-/* serialized = row[:ips].map do |cidr| */
-/*   (ip, mask) = cidr.split('/') */
-/*   (ip.split('.').map(&:to_i) << (mask || 32).to_i).pack('CCCCC') */
-/* end.sort.join */
+static const char *read_dot(const char *p) { return (p && *p == '.') ? p+1 : NULL; }
+
+static const char *read_mask(const char *p, uint8_t *mask)
+{
+    p = read_byte(p, mask);
+    return (*mask < 8 || *mask > 32) ? NULL : p;
+}
+
+static const char *read_dotted_quad(const char *p, uint32_t *out)
+{
+    uint8_t a, b, c, d;
+    p = read_byte(p, &a); p = read_dot(p);
+    p = read_byte(p, &b); p = read_dot(p);
+    p = read_byte(p, &c); p = read_dot(p);
+    p = read_byte(p, &d);
+    if (!p) return p;
+    *out = a<<24 | b<<16 | c<<8 | d;
+    return p;
+}
+
+static struct ip read_textual_ip_line(const char *p)
+{
+    struct ip ip = {0};
+    uint32_t dq = 0;
+
+    p = read_dotted_quad(p, &dq);
+    if (!p) return ip;
+    switch (*p++) {
+    case ',':
+        ip.first = dq;
+        p = read_dotted_quad(p, &ip.last);
+        if (NULL == p || *p) return ip;
+        if (ip.last < ip.first) return ip;
+        ip.type = ADDRESS_RANGE;
+        break;
+    case '/':
+        ip.ip = dq;
+        p = read_mask(p, &ip.mask);
+        if (NULL == p || *p) return ip;
+        ip.type = SINGLE_ADDRESS;
+        break;
+    case 0:
+        ip.ip = dq;
+        ip.mask = 32;
+        ip.type = SINGLE_ADDRESS;
+        break;
+    default:
+        /* This is unnecessary, but makes our intent explicit. */
+        ip.type = INVALID_ADDRESS;
+    }
+    return ip;
+}
+
 /* Serialize an array of IPs as strings into a single string of big-endian
  * integers plus mask. */
 static VALUE serialize(VALUE self __attribute__((unused)), VALUE in) {
     if (TYPE(in) != T_ARRAY)
         rb_raise(rb_eTypeError, "serialize requires an array");
 
-    size_t n = RARRAY_LEN(in);
+    size_t n = RARRAY_LEN(in), total = n, trim = 0;
     VALUE out = rb_str_new(NULL, n*5);
     VALUE out_str = rb_string_value(&out);
     char *out_p = RSTRING_PTR(out_str);
+    VALUE extras = rb_ary_new2(0);
+
+#define EMIT(p, ip, mask) do {                                          \
+        *(p)++ = (ip)>>24; *(p)++ = (ip)>>16; *(p)++ = (ip)>>8; *(p)++ = (ip); \
+        *(p)++ = (mask);                                                \
+    } while(0)
 
     for (size_t i = 0; i < n; ++i) {
         VALUE ent = rb_ary_entry(in, i);
-        char *s = StringValueCStr(ent);
-        struct ip_and_mask ip_and_mask = read_textual_ip_address_and_optional_mask(s);
-        if (ip_and_mask.mask < 8 || ip_and_mask.mask > 32)
-            rb_raise(rb_eArgError, "invalid IP and mask");
-        uint32_t ip = ip_and_mask.ip;
-        uint8_t mask = ip_and_mask.mask;
-        ip &= (uint32_t)0xffffffff << (32-mask);
-        *out_p++ = ip>>24; *out_p++ = ip>>16; *out_p++ = ip>>8; *out_p++ = ip;
-        *out_p++ = ip_and_mask.mask;
+        struct ip ip = read_textual_ip_line(StringValueCStr(ent));
+        switch (ip.type) {
+        case SINGLE_ADDRESS:
+            ip.ip &= (uint32_t)0xffffffff << (32-ip.mask);
+            EMIT(out_p, ip.ip, ip.mask);
+            break;
+        case ADDRESS_RANGE:
+            ++trim;
+            total += ip.last-ip.first; /* NB: one less because we've been counted once */
+            VALUE tmp = rb_str_new(NULL, (1+ip.last-ip.first)*5);
+            char *p = RSTRING_PTR(rb_string_value(&tmp));
+            for (uint32_t v = ip.first; v <= ip.last; ++v)
+                EMIT(p, v, 32);
+            rb_ary_push(extras, tmp);
+            break;
+        case INVALID_ADDRESS:
+        default:
+            rb_raise(rb_eArgError, "invalid address");
+        }
     }
-    qsort(RSTRING_PTR(out_str), n, 5, compare_serialized);
+
+#undef EMIT
+
+    if (trim != 0) {
+        rb_str_set_len(out, (n-trim)*5);
+        rb_str_concat(out, rb_ary_join(extras, rb_str_new(NULL, 0)));
+    }
+    qsort(RSTRING_PTR(rb_string_value(&out)), total, 5, compare_serialized);
     return out;
 }
 
 enum { MAX_IP_FMT_LEN = 4*4+4 };
 
-static void format_ip_and_mask(uint8_t *in, char *out)
+static void format_ip(uint8_t *in, char *out)
 {
     if (in[4] == 32)
         snprintf(out, MAX_IP_FMT_LEN, "%hhu.%hhu.%hhu.%hhu", in[0], in[1], in[2], in[3]);
@@ -92,7 +167,7 @@ static uint8_t *coalesce_networks(uint8_t *p, uint8_t *e)
         q -= 5;
         if (32 != q[4]) break;
         uint32_t this = q[0]<<24 | q[1]<<16 | q[2]<<8 | q[3];
-        if ((this-start) != (1<<n)-1) break;
+        if ((this-start) != (1u<<n)-1) break;
     }
 
     if (best == 0)
@@ -121,7 +196,7 @@ static VALUE normalize_text(VALUE self, VALUE in) {
         p = coalesce_networks(p, e);
         if (q && p[0] == q[0] && p[1] == q[1] && p[2] == q[2] && p[3] == q[3] && p[4] == q[4])
             continue;
-        format_ip_and_mask(p, buf);
+        format_ip(p, buf);
         rb_ary_push(out, rb_str_new2(buf));
         q = p;
     }
@@ -149,9 +224,8 @@ static VALUE validate(int argc, VALUE *argv, VALUE self __attribute__((unused)))
     VALUE out = rb_ary_new();
     for (long i = 0; i < RARRAY_LEN(in); ++i) {
         VALUE ent = rb_ary_entry(in, i);
-        char *s = StringValueCStr(ent);
-        struct ip_and_mask ip_and_mask = read_textual_ip_address_and_optional_mask(s);
-        if (ip_and_mask.mask < 8 || ip_and_mask.mask > 32) {
+        struct ip ip = read_textual_ip_line(StringValueCStr(ent));
+        if (INVALID_ADDRESS == ip.type) {
             rb_ary_push(out, ent);
             if (RARRAY_LEN(out) >= n)
                 return out;

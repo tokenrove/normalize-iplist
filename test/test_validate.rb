@@ -15,9 +15,24 @@ class NormalizeIPListValidateTest < Test::Unit::TestCase
                                            '192.168.0.1']))
   end
 
+  def test_validate_valid_range
+    assert_equal([],
+                 NormalizeIPList.validate(['192.168.0.1,192.168.0.10']))
+  end
+
+  def test_validate_range_with_invalid_endpoint
+    assert_equal(['192.168.0.1,192.168.0.256'],
+                 NormalizeIPList.validate(['192.168.0.1,192.168.0.256']))
+  end
+
   def test_validate_with_high_values
     assert_equal(['272.208.76.24'],
                  NormalizeIPList.validate(['272.208.76.24']))
+  end
+
+  def test_validate_range_with_high_values
+    assert_equal(['255.255.255.255,300.0.0.0'],
+                 NormalizeIPList.validate(['255.255.255.255,300.0.0.0']))
   end
 
   def test_validate_with_supplied_n_returns_up_to_n

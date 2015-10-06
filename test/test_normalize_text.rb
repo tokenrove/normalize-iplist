@@ -65,4 +65,23 @@ class NormalizeIPListNormalizeTextTest < Test::Unit::TestCase
     ips << '192.168.1.0/24'
     assert_equal(['192.168.1.0/24'], NormalizeIPList.normalize_text(ips))
   end
+
+  def test_normalize_supports_ranges_which_cross_a_dot
+    assert_equal(['192.168.1.255', '192.168.2.0', '192.168.2.1'],
+                 NormalizeIPList.normalize_text(['192.168.1.255,192.168.2.1']))
+  end
+
+  def test_normalize_rejects_unsorted_ranges
+    assert_raise ArgumentError do
+      NormalizeIPList.normalize_text(['192.168.2.0,192.168.1.192'])
+    end
+  end
+
+  def test_normalize_rejects_invalid_range
+    [['192.168.2.0,'], [',192.168.2.0'], ['192.168.0.0/32,192.168.0.0/32']].each do |a|
+      assert_raise ArgumentError do
+        NormalizeIPList.normalize_text(a)
+      end
+    end
+  end
 end

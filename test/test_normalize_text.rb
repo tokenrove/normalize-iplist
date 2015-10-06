@@ -71,6 +71,11 @@ class NormalizeIPListNormalizeTextTest < Test::Unit::TestCase
                  NormalizeIPList.normalize_text(['192.168.1.255,192.168.2.1']))
   end
 
+  def test_normalize_and_coalesce_large_range
+    assert_equal(['10.0.0.0/8'],
+                 NormalizeIPList.normalize_text(['10.0.0.0,10.0.255.255', '10.1.0.0,10.255.255.255']))
+  end
+
   def test_normalize_rejects_unsorted_ranges
     assert_raise ArgumentError do
       NormalizeIPList.normalize_text(['192.168.2.0,192.168.1.192'])

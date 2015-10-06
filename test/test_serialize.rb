@@ -24,4 +24,11 @@ class NormalizeIPListSerializeTest < Test::Unit::TestCase
                   10,0,0,0,8].pack('C*').encode(Encoding::ASCII_8BIT),
                  NormalizeIPList.serialize(['1.2.3.4', '10.0.0.0/8', '3.3.3.3/32', '1.2.0.0/16']))
   end
+
+  def test_serialize_explodes_range
+    assert_equal([10,0,0,1,32,
+                  10,0,0,2,32,
+                  10,0,0,3,32].pack('C*').encode(Encoding::ASCII_8BIT),
+                 NormalizeIPList.serialize(['10.0.0.1,10.0.0.3']))
+  end
 end

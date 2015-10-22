@@ -1,0 +1,17 @@
+= normalize-iplist
+
+This gem provides some relatively fast methods for working with lists
+of IP addresses and networks.
+
+To build and test:
+
+  rake build test
+
+== TODO
+
+* reworking the name and API to be more obvious and self-descriptive
+
+* documentation
+
+* coalescing of adjacent netmasks (like cidrmerge)
+  (presently we only coalesce adjacent sequences of /32)

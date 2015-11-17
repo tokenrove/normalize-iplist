@@ -160,7 +160,7 @@ static uint8_t *coalesce_networks(uint8_t *p, uint8_t *e)
     uint32_t start = p[0]<<24 | p[1]<<16 | p[2]<<8 | p[3];
 
     size_t best = 0;
-    for (size_t n = 3; n < 32; best = n, ++n) {
+    for (size_t n = 1; n < 32; best = n, ++n) {
         if ((start & ((1<<n)-1)) != 0) break;
         q = &p[5<<n];
         if (q > e) break;

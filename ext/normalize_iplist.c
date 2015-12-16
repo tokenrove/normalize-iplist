@@ -1,4 +1,6 @@
 
+#include <stdbool.h>
+
 #include <ruby.h>
 
 static VALUE module;
@@ -203,7 +205,8 @@ static uint8_t *coalesce_networks(uint8_t *p, uint8_t *e)
 
 /* self.ips = ips.map { |ip| self.class.string_to_cidr(ip) }.uniq.sort.map { |ip| self.class.cidr_to_string(ip) } */
 /* Normalize IP addresses, uniq and sort, return array. */
-static VALUE normalize_text(VALUE self, VALUE in) {
+static VALUE normalize_text(VALUE self, VALUE in)
+{
     VALUE serialized = serialize(self, in);
     VALUE sorted_bin = rb_string_value(&serialized);
     uint8_t *p = (uint8_t *)RSTRING_PTR(sorted_bin), *e = p + RSTRING_LEN(sorted_bin), *q = NULL;
@@ -223,13 +226,163 @@ static VALUE normalize_text(VALUE self, VALUE in) {
 }
 
 /* Returns an array of up to n (default 1) invalid IPs in the array of strings passed in. */
-static VALUE validate(int argc, VALUE *argv, VALUE self __attribute__((unused))) {
+static VALUE validate_array(VALUE in, VALUE out, long n) {
+    long len = RARRAY_LEN(in);
+    if (len >= FIXNUM_MAX)
+        rb_raise(rb_eArgError, "array is too large (must have fixnum indices)");
+
+    for (long i = 0; i < len; ++i) {
+        VALUE ent = rb_ary_entry(in, i);
+        struct ip ip = read_textual_ip_line(StringValueCStr(ent));
+        if (INVALID_ADDRESS == ip.type) {
+            rb_ary_push(out, INT2FIX(1+i));
+            if (RARRAY_LEN(out) >= n)
+                return out;
+        }
+    }
+    return out;
+}
+
+static VALUE validate_generic_stream(VALUE in, VALUE out, long n) {
+    ID read_sym = rb_intern("read");
+    /* Note about this size:
+     * - it should be tuned;
+     * - it should be at least as large as StringMax, the cut-off
+     *   point for StringIO/file in open-uri (10240 in 2.2.0).
+     *
+     * It's useful to change this to a value like 3 when testing to
+     * make sure the continuation logic works.
+     */
+    VALUE bufsize = INT2FIX(65536);
+    VALUE buf = rb_str_new(NULL, bufsize);
+
+    long line_number = 1;
+    enum { INVALID,
+           START,
+           AFTER_COMMA,
+           SEEKING_DIGIT,
+           SEEKING_DOT,
+           SEEKING_OCTET_DOT,
+           SEEKING_MASK_DIGIT,
+           SEEKING_MASKLESS_TERMINAL,
+           SEEKING_MASK_TERMINAL
+    } state = START;
+
+    int current_octet = 0, n_octets = 1;
+    bool comma_valid = true;
+    bool has_more = Qnil != rb_funcall(in, read_sym, 2, bufsize, buf);
+    uint8_t *p = (uint8_t *)RSTRING_PTR(buf),
+        *e = p + RSTRING_LEN(buf);
+    while (has_more) {
+        char c = *p;
+
+        switch (state) {
+        case START:
+            comma_valid = true;
+        case AFTER_COMMA:
+            current_octet = n_octets = 0;
+        case SEEKING_DIGIT:
+            ++n_octets;
+            if (c == '0') {
+                state = (n_octets == 4) ? SEEKING_MASKLESS_TERMINAL : SEEKING_DOT;
+            } else if (c >= '1' && c <= '9') {
+                current_octet = c-'0';
+                state = (n_octets == 4) ? SEEKING_MASKLESS_TERMINAL : SEEKING_OCTET_DOT;
+            } else
+                state = INVALID;
+            break;
+
+        case SEEKING_DOT:
+            if (c == '.') {
+                state = (n_octets >= 4) ? INVALID : SEEKING_DIGIT;
+            } else
+                state = INVALID;
+            break;
+
+        case SEEKING_OCTET_DOT:
+            if (c >= '0' && c <= '9') {
+                current_octet = 10*current_octet + (c-'0');
+                if (current_octet > 255)
+                    state = INVALID;
+            } else if (c == '.') {
+                state = (n_octets >= 4) ? INVALID : SEEKING_DIGIT;
+            } else
+                state = INVALID;
+            break;
+
+        case SEEKING_MASKLESS_TERMINAL:
+            if (c >= '0' && c <= '9') {
+                current_octet = 10*current_octet + (c-'0');
+                if (current_octet > 255)
+                    state = INVALID;
+            } else if (c == '/') {
+                state = SEEKING_MASK_DIGIT;
+            } else if (c == ',' && comma_valid) {
+                comma_valid = false;
+                state = AFTER_COMMA;
+            } else if (c == '\n') {
+                ++line_number;
+                state = START;
+            } else
+                state = INVALID;
+            break;
+
+        case SEEKING_MASK_DIGIT:
+            if (c >= '1' && c <= '9') {
+                current_octet = c-'0';
+                state = SEEKING_MASK_TERMINAL;
+            } else
+                state = INVALID;
+            break;
+
+        case SEEKING_MASK_TERMINAL:
+            if (c >= '0' && c <= '9') {
+                current_octet = 10*current_octet + (c-'0');
+                if (current_octet > 32)
+                    state = INVALID;
+            } else if (c == ',' && comma_valid) {
+                comma_valid = false;
+                state = AFTER_COMMA;
+            } else if (c == '\n') {
+                ++line_number;
+                state = START;
+            } else
+                state = INVALID;
+            break;
+
+        default:
+            break;
+        }
+
+        ++p;
+        if (p >= e) {
+            has_more = Qnil != rb_funcall(in, read_sym, 2, bufsize, buf);
+            if (!has_more) c = '\n';
+            p = has_more ? (uint8_t *)RSTRING_PTR(buf) : NULL;
+            e = has_more ? p + RSTRING_LEN(buf) : NULL;
+        }
+
+        if ('\n' == c && INVALID == state) {
+            if (line_number > FIXNUM_MAX)
+                rb_raise(rb_eArgError, "input was too large (more than fixnum lines)");
+            rb_ary_push(out, INT2FIX(line_number));
+            if (RARRAY_LEN(out) >= n)
+                return out;
+
+            ++line_number;
+            state = START;
+        }
+    }
+
+    return out;
+}
+
+static VALUE validate(int argc, VALUE *argv, VALUE self __attribute__((unused)))
+{
     if (argc > 2 || argc == 0)
         rb_raise(rb_eArgError, "wrong number of arguments");
 
     VALUE in = argv[0];
-    if (TYPE(in) != T_ARRAY)
-        rb_raise(rb_eTypeError, "validate requires an array as the first argument");
 
     long n = 1;
     if (argc == 2) {
@@ -241,16 +394,11 @@ static VALUE validate(int argc, VALUE *argv, VALUE self __attribute__((unused)))
     }
 
     VALUE out = rb_ary_new();
-    for (long i = 0; i < RARRAY_LEN(in); ++i) {
-        VALUE ent = rb_ary_entry(in, i);
-        struct ip ip = read_textual_ip_line(StringValueCStr(ent));
-        if (INVALID_ADDRESS == ip.type) {
-            rb_ary_push(out, ent);
-            if (RARRAY_LEN(out) >= n)
-                return out;
-        }
-    }
-    return out;
+
+    if (TYPE(in) == T_ARRAY)
+        return validate_array(in, out, n);
+    /* XXX if this is an fd-backed IO, take a fast path here */
+    return validate_generic_stream(in, out, n);
 }
 
 void Init_normalize_iplist(void) {

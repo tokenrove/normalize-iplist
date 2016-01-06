@@ -265,7 +265,8 @@ static VALUE validate_generic_stream(VALUE in, VALUE out, long n) {
            SEEKING_OCTET_DOT,
            SEEKING_MASK_DIGIT,
            SEEKING_MASKLESS_TERMINAL,
-           SEEKING_MASK_TERMINAL
+           SEEKING_MASK_TERMINAL,
+           SEEKING_NEWLINE
     } state = START;
 
     int current_octet = 0, n_octets = 1;
@@ -320,6 +321,8 @@ static VALUE validate_generic_stream(VALUE in, VALUE out, long n) {
             } else if (c == ',' && comma_valid) {
                 comma_valid = false;
                 state = AFTER_COMMA;
+            } else if (c == '\r') {
+                state = SEEKING_NEWLINE;
             } else if (c == '\n') {
                 ++line_number;
                 state = START;
@@ -344,6 +347,16 @@ static VALUE validate_generic_stream(VALUE in, VALUE out, long n) {
                 comma_valid = false;
                 state = AFTER_COMMA;
             } else if (c == '\n') {
+                ++line_number;
+                state = START;
+            } else if (c == '\r') {
+                state = SEEKING_NEWLINE;
+            } else
+                state = INVALID;
+            break;
+
+        case SEEKING_NEWLINE:
+            if (c == '\n') {
                 ++line_number;
                 state = START;
             } else

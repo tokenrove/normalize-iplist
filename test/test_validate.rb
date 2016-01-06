@@ -65,6 +65,16 @@ class NormalizeIPListValidateTest < Test::Unit::TestCase
     assert_equal([2, 3, 4], NormalizeIPList.validate(s, 3))
   end
 
+  def test_validate_stringio_crlf
+    s = StringIO.new(['192.168.0.1/32',
+                      '192.168.0.',
+                      '192.168._',
+                      'foo',
+                      '192.168.0.',
+                      'f192.168.0.1'].join("\r\n"))
+    assert_equal([2, 3, 4], NormalizeIPList.validate(s, 3))
+  end
+
   def test_validate_from_fd
     Tempfile.open('ip-list') do |f|
       f.write(['192.168.0.1/32',

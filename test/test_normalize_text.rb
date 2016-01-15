@@ -114,4 +114,14 @@ EOF
                   '65.96.66.72'],
                  NormalizeIPList.normalize_text(input))
   end
+
+  def test_normalize_dedup_multiple_representations
+    input = <<EOF.split("\n")
+127.0.0.0,127.0.0.25
+127.0.0.0/24
+127.0.0.3
+EOF
+    assert_equal(['127.0.0.0/24'],
+                 NormalizeIPList.normalize_text(input))
+  end
 end

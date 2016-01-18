@@ -91,6 +91,23 @@ static struct ip read_textual_ip_line(const char *p)
     return ip;
 }
 
+
+static char *dedup(char *p, size_t n)
+{
+    char *q = p;
+
+    for (size_t i = 1; i < n; ++i) {
+        p += 5;
+        if (!memcmp(p, q, 5))
+            continue;
+        q += 5;
+        if (q < p)
+            memcpy(q, p, 5);
+    }
+    return q + (n ? 5 : 0);
+}
+
+
 /* Serialize an array of IPs as strings into a single string of big-endian
  * integers plus mask. */
 static VALUE serialize(VALUE self __attribute__((unused)), VALUE in) {
@@ -99,8 +116,7 @@ static VALUE serialize(VALUE self __attribute__((unused)), VALUE in) {
 
     size_t n = RARRAY_LEN(in), total = n, trim = 0;
     VALUE out = rb_str_new(NULL, n*5);
-    VALUE out_str = rb_string_value(&out);
-    char *out_p = RSTRING_PTR(out_str);
+    char *out_p = RSTRING_PTR(out);
     VALUE extras = rb_ary_new2(0);
 
 #define EMIT(p, ip, mask) do {                                          \
@@ -120,7 +136,7 @@ static VALUE serialize(VALUE self __attribute__((unused)), VALUE in) {
             ++trim;
             total += ip.last-ip.first; /* NB: one less because we've been counted once */
             VALUE tmp = rb_str_new(NULL, (1+ip.last-ip.first)*5);
-            char *p = RSTRING_PTR(rb_string_value(&tmp));
+            char *p = RSTRING_PTR(tmp);
             for (uint32_t v = ip.first; v <= ip.last; ++v)
                 EMIT(p, v, 32);
             rb_ary_push(extras, tmp);
@@ -137,7 +153,10 @@ static VALUE serialize(VALUE self __attribute__((unused)), VALUE in) {
         rb_str_set_len(out, (n-trim)*5);
         rb_str_concat(out, rb_ary_join(extras, rb_str_new(NULL, 0)));
     }
-    qsort(RSTRING_PTR(rb_string_value(&out)), total, 5, compare_serialized);
+    char *outp = RSTRING_PTR(out);
+    qsort(outp, total, 5, compare_serialized);
+    char *trimmedp = dedup(outp, total);
+    rb_str_set_len(out, trimmedp-outp);
     return out;
 }
 

@@ -90,8 +90,28 @@ class NormalizeIPListNormalizeTextTest < Test::Unit::TestCase
     end
   end
 
-
   def test_normalize_permits_dumb_single_entry_ranges
     assert_equal(['4.0.0.0'], NormalizeIPList.normalize_text(['4.0.0.0,4.0.0.0']))
+  end
+
+  # Issue #3: Some sequences of duplicates are not coalesced properly
+  def test_normalize_issue_3
+    input = <<EOF.split("\n")
+65.96.66.64
+65.96.66.64
+65.96.66.66
+65.96.66.66
+65.96.66.67
+65.96.66.68
+65.96.66.69
+65.96.66.69
+65.96.66.72
+65.96.66.71
+65.96.66.71
+EOF
+    assert_equal(['65.96.66.64', '65.96.66.66', '65.96.66.67',
+                  '65.96.66.68', '65.96.66.69', '65.96.66.71',
+                  '65.96.66.72'],
+                 NormalizeIPList.normalize_text(input))
   end
 end

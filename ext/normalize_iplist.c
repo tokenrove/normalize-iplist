@@ -373,7 +373,11 @@ static VALUE validate_generic_stream(VALUE in, VALUE out, long n) {
             e = has_more ? p + RSTRING_LEN(buf) : NULL;
         }
 
-        if ('\n' == c && INVALID == state) {
+        if ('\n' == c &&
+            !(START == state ||
+              SEEKING_NEWLINE == state ||
+              SEEKING_MASKLESS_TERMINAL == state ||
+              SEEKING_MASK_TERMINAL == state)) {
             if (line_number > FIXNUM_MAX)
                 rb_raise(rb_eArgError, "input was too large (more than fixnum lines)");
             rb_ary_push(out, INT2FIX(line_number));

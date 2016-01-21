@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name = "normalize-iplist"
-  s.version = "0.8.1"
+  s.version = "0.8.2"
   s.email = "julian.squires@adgear.com"
   s.summary = "IP list normalization/serialization"
   s.files = ["Rakefile", "README.rdoc", "ext/normalize_iplist.c", "ext/extconf.rb"]

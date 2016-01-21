@@ -284,9 +284,7 @@ static VALUE validate_generic_stream(VALUE in, VALUE out, long n) {
             current_octet = n_octets = 0;
         case SEEKING_DIGIT:
             ++n_octets;
-            if (c == '0') {
-                state = (n_octets == 4) ? SEEKING_MASKLESS_TERMINAL : SEEKING_DOT;
-            } else if (c >= '1' && c <= '9') {
+            if (c >= '0' && c <= '9') {
                 current_octet = c-'0';
                 state = (n_octets == 4) ? SEEKING_MASKLESS_TERMINAL : SEEKING_OCTET_DOT;
             } else

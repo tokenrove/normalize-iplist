@@ -86,7 +86,7 @@ class NormalizeIPListValidateTest < Test::Unit::TestCase
                '192.168.0.',
                'f192.168.0.1'].join("\n"))
       f.rewind
-      assert_equal([2, 3, 5, 6],
+      assert_equal([2, 5, 6, 7],
                    NormalizeIPList.validate(f, 4))
     end
   end
@@ -111,8 +111,15 @@ class NormalizeIPListValidateTest < Test::Unit::TestCase
                '255.0255.255.0',
                'f192.168.0.1'].join("\n"))
       f.rewind
-      assert_equal([2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+      assert_equal([2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17],
                    NormalizeIPList.validate(f, 20))
     end
   end
+
+  def test_validate_zero_padded_ips
+    s = StringIO.new(['192.168.000.001/32',
+                      '192.168.000.032'].join("\n"))
+    assert_equal([], NormalizeIPList.validate(s, 3))
+  end
+
 end

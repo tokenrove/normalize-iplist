@@ -118,8 +118,14 @@ class NormalizeIPListValidateTest < Test::Unit::TestCase
 
   def test_validate_zero_padded_ips
     s = StringIO.new(['192.168.000.001/32',
-                      '192.168.000.032'].join("\n"))
-    assert_equal([], NormalizeIPList.validate(s, 3))
+                      '192.168.000.032',
+                      '00000'].join("\n"))
+    assert_equal([3], NormalizeIPList.validate(s, 3))
   end
 
+  def test_validate_catches_truncated_final
+    ['00000', '192.', '192.168.', '192.168.0', '129.168.0.'].each do |ip|
+      assert_equal([1], NormalizeIPList.validate(StringIO.new(ip)))
+    end
+  end
 end

@@ -1,7 +1,9 @@
 
+#include <assert.h>
 #include <stdbool.h>
 
 #include <ruby.h>
+#include <ruby/io.h>
 
 static VALUE module;
 
@@ -416,9 +418,206 @@ static VALUE validate(int argc, VALUE *argv, VALUE self __attribute__((unused)))
     return validate_generic_stream(in, out, n);
 }
 
+
+static VALUE strip_invalid_lines(VALUE self __attribute__((unused)), VALUE source, VALUE sink)
+{
+    ID read_sym = rb_intern("read");
+    ID write_sym = rb_intern("write");
+
+    /* Note about this size:
+     * - it should be tuned;
+     * - it should be at least as large as StringMax, the cut-off
+     *   point for StringIO/file in open-uri (10240 in 2.2.0).
+     *
+     * It's useful to change this to a value like 3 when testing to
+     * make sure the continuation logic works.
+     */
+    VALUE bufsize = INT2FIX(65536);
+    VALUE source_buf = rb_str_new(NULL, bufsize);
+    VALUE sink_buf = rb_str_new(NULL, bufsize);
+    size_t line_buf_len = 34;
+    uint8_t line_buf[line_buf_len+1];
+
+    enum { INVALID,
+           START,
+           AFTER_COMMA,
+           SEEKING_DIGIT,
+           SEEKING_DOT,
+           SEEKING_OCTET_DOT,
+           SEEKING_MASK_DIGIT,
+           SEEKING_MASKLESS_TERMINAL,
+           SEEKING_MASK_TERMINAL,
+           SEEKING_NEWLINE
+    } state = START;
+
+    int current_octet = 0, n_octets = 1;
+    bool comma_valid = true;
+    bool has_more = Qnil != rb_funcall(source, read_sym, 2, bufsize, source_buf);
+    uint8_t *ip = (uint8_t *)RSTRING_PTR(source_buf),
+        *ie = ip + RSTRING_LEN(source_buf),
+        *op = (uint8_t *)RSTRING_PTR(sink_buf),
+        *oe = op + bufsize,
+        *lp = line_buf;
+    while (has_more) {
+        char c = *ip;
+        *lp++ = c;
+        if (lp-line_buf >= (ptrdiff_t)line_buf_len) {
+            lp = line_buf;
+            state = INVALID;
+        }
+
+#define COPY_TO_SINK() do {                     \
+            assert(lp > line_buf);              \
+            size_t len = lp-line_buf;           \
+            line_buf[line_buf_len] = 0;         \
+            memcpy(op, line_buf, len);          \
+            op += len;                          \
+            assert(op <= oe);                   \
+            lp = line_buf;                      \
+        } while (0)
+
+        assert(oe-op >= (ptrdiff_t)line_buf_len);
+
+        switch (state) {
+        case START:
+            comma_valid = true;
+        case AFTER_COMMA:
+            current_octet = n_octets = 0;
+        case SEEKING_DIGIT:
+            ++n_octets;
+            if (c >= '0' && c <= '9') {
+                current_octet = c-'0';
+                state = (n_octets == 4) ? SEEKING_MASKLESS_TERMINAL : SEEKING_OCTET_DOT;
+            } else
+                state = INVALID;
+            break;
+
+        case SEEKING_DOT:
+            if (c == '.') {
+                state = (n_octets >= 4) ? INVALID : SEEKING_DIGIT;
+            } else
+                state = INVALID;
+            break;
+
+        case SEEKING_OCTET_DOT:
+            if (c >= '0' && c <= '9') {
+                current_octet = 10*current_octet + (c-'0');
+                if (current_octet > 255)
+                    state = INVALID;
+            } else if (c == '.') {
+                state = (n_octets >= 4) ? INVALID : SEEKING_DIGIT;
+            } else
+                state = INVALID;
+            break;
+
+        case SEEKING_MASKLESS_TERMINAL:
+            if (c >= '0' && c <= '9') {
+                current_octet = 10*current_octet + (c-'0');
+                if (current_octet > 255)
+                    state = INVALID;
+            } else if (c == '/') {
+                state = SEEKING_MASK_DIGIT;
+            } else if (c == ',' && comma_valid) {
+                comma_valid = false;
+                state = AFTER_COMMA;
+            } else if (c == '\r') {
+                state = SEEKING_NEWLINE;
+            } else if (c == '\n') {
+                COPY_TO_SINK();
+                state = START;
+            } else
+                state = INVALID;
+            break;
+
+        case SEEKING_MASK_DIGIT:
+            if (c >= '1' && c <= '9') {
+                current_octet = c-'0';
+                state = SEEKING_MASK_TERMINAL;
+            } else
+                state = INVALID;
+            break;
+
+        case SEEKING_MASK_TERMINAL:
+            if (c >= '0' && c <= '9') {
+                current_octet = 10*current_octet + (c-'0');
+                if (current_octet > 32)
+                    state = INVALID;
+            } else if (c == ',' && comma_valid) {
+                comma_valid = false;
+                state = AFTER_COMMA;
+            } else if (c == '\n') {
+                COPY_TO_SINK();
+                state = START;
+            } else if (c == '\r') {
+                state = SEEKING_NEWLINE;
+            } else
+                state = INVALID;
+            break;
+
+        case SEEKING_NEWLINE:
+            if (c == '\n') {
+                COPY_TO_SINK();
+                state = START;
+            } else
+                state = INVALID;
+            break;
+
+        default:
+            break;
+        }
+
+        ++ip;
+        if (ip >= ie) {
+            has_more = Qnil != rb_funcall(source, read_sym, 2, bufsize, source_buf);
+            if (!has_more) c = '\n';
+            ip = has_more ? (uint8_t *)RSTRING_PTR(source_buf) : NULL;
+            ie = has_more ? ip + RSTRING_LEN(source_buf) : NULL;
+        }
+
+        if ('\n' == c &&
+            !(START == state ||
+              SEEKING_NEWLINE == state ||
+              SEEKING_MASKLESS_TERMINAL == state ||
+              SEEKING_MASK_TERMINAL == state)) {
+            lp = line_buf;
+            state = START;
+        }
+
+        if (op + line_buf_len >= oe) {
+            uint8_t *tp = (uint8_t *)RSTRING_PTR(sink_buf);
+            if (op-tp < (ptrdiff_t)bufsize) {
+                VALUE s = rb_str_substr(sink_buf, 0, op-tp);
+                rb_funcall(sink, write_sym, 1, s);
+            } else
+                rb_funcall(sink, write_sym, 1, sink_buf);
+            op = (uint8_t *)RSTRING_PTR(sink_buf);
+        }
+    }
+
+    if (lp > line_buf &&
+        (START == state ||
+         SEEKING_NEWLINE == state ||
+         SEEKING_MASKLESS_TERMINAL == state ||
+         SEEKING_MASK_TERMINAL == state)) {
+        COPY_TO_SINK();
+    }
+
+    {
+        uint8_t *tp = (uint8_t *)RSTRING_PTR(sink_buf);
+        if (op-tp > 0) {
+            VALUE s = rb_str_substr(sink_buf, 0, op-tp);
+            rb_funcall(sink, write_sym, 1, s);
+        }
+    }
+
+    return Qtrue;
+}
+
+
 void Init_normalize_iplist(void) {
     module = rb_define_module("NormalizeIPList");
     rb_define_module_function(module, "normalize_text", normalize_text, 1);
     rb_define_module_function(module, "serialize", serialize, 1);
     rb_define_module_function(module, "validate", validate, -1);
+    rb_define_module_function(module, "strip_invalid_lines", strip_invalid_lines, 2);
 }

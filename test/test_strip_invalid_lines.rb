@@ -20,9 +20,10 @@ class NormalizeIPListStripInvalidLines < Test::Unit::TestCase
     [LF, CRLF].each do |sep|
       source = StringIO.new(TYPICAL_BAD_LIST.join(sep))
       sink = StringIO.new
-      NormalizeIPList.strip_invalid_lines(source, sink)
+      valid_count = NormalizeIPList.strip_invalid_lines(source, sink)
       sink.rewind
       assert_equal(TYPICAL_BAD_LIST_WHEAT.join(sep), sink.read)
+      assert_equal(TYPICAL_BAD_LIST_WHEAT.length, valid_count)
     end
   end
 
@@ -32,9 +33,10 @@ class NormalizeIPListStripInvalidLines < Test::Unit::TestCase
         Tempfile.open('ip-list-sink') do |sink|
           source.write(TYPICAL_BAD_LIST.join(sep) + sep)
           source.rewind
-          NormalizeIPList.strip_invalid_lines(source, sink)
+          valid_count = NormalizeIPList.strip_invalid_lines(source, sink)
           sink.rewind
           assert_equal(TYPICAL_BAD_LIST_WHEAT.join(sep) + sep, sink.read)
+          assert_equal(TYPICAL_BAD_LIST_WHEAT.length, valid_count)
         end
       end
     end
@@ -61,12 +63,13 @@ class NormalizeIPListStripInvalidLines < Test::Unit::TestCase
                       '255.0255.255.0',
                       'f192.168.0.1'].join("\n"))
         source.rewind
-        NormalizeIPList.strip_invalid_lines(source, sink)
+        valid_count = NormalizeIPList.strip_invalid_lines(source, sink)
         sink.rewind
         assert_equal(['192.168.0.1/32',
                       '192.168.1.42/8',
                       '255.0255.255.0'].join("\n") + "\n",
                      sink.read)
+        assert_equal(3, valid_count)
       end
     end
   end
@@ -74,16 +77,18 @@ class NormalizeIPListStripInvalidLines < Test::Unit::TestCase
   def test_strip_long_lines_stringio
     source = StringIO.new((['9' * 2048] * 1024).join("\n"))
     sink = StringIO.new
-    NormalizeIPList.strip_invalid_lines(source, sink)
+    valid_count = NormalizeIPList.strip_invalid_lines(source, sink)
     sink.rewind
     assert_equal('', sink.read)
+    assert_equal(0, valid_count)
   end
 
   def test_strip_empty_stringio
     source = StringIO.new
     sink = StringIO.new
-    NormalizeIPList.strip_invalid_lines(source, sink)
+    valid_count = NormalizeIPList.strip_invalid_lines(source, sink)
     sink.rewind
     assert_equal('', sink.read)
+    assert_equal(0, valid_count)
   end
 end

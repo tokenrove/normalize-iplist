@@ -451,6 +451,7 @@ static VALUE strip_invalid_lines(VALUE self __attribute__((unused)), VALUE sourc
     } state = START;
 
     int current_octet = 0, n_octets = 1;
+    long valid_count = 0;
     bool comma_valid = true;
     bool has_more = Qnil != rb_funcall(source, read_sym, 2, bufsize, source_buf);
     uint8_t *ip = (uint8_t *)RSTRING_PTR(source_buf),
@@ -474,6 +475,7 @@ static VALUE strip_invalid_lines(VALUE self __attribute__((unused)), VALUE sourc
             op += len;                          \
             assert(op <= oe);                   \
             lp = line_buf;                      \
+            ++valid_count;                      \
         } while (0)
 
         assert(oe-op >= (ptrdiff_t)line_buf_len);
@@ -610,7 +612,7 @@ static VALUE strip_invalid_lines(VALUE self __attribute__((unused)), VALUE sourc
         }
     }
 
-    return Qtrue;
+    return INT2FIX(valid_count);
 }
 
 

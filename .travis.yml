@@ -11,3 +11,7 @@ addons:
       - ubuntu-toolchain-r-test
     packages:
       - gcc-4.9
+notifications:
+  email: false
+  slack:
+    secure: F0vOu8SbADq331/GaNuSOFTVqMlBf6u9b0Au6R5VctzZ7mviD5+I8U7C+F3+YeTVBlCksJ8JvMZih7Sv00r3sqBKBqjDD0u3i+2ArJOhns/SNf+FgvnzVhKNl0zyigA15ozCvpiOp2yiCzeY7LzlqOsDdQRK9nzIGw20mccHFYy2WeX35bsdGtYFL5vQnmCp09GuVTpzOwetj326L9JF+DeT5yQNrM9zRtCFzeQML2vkrVmIFGO+9knqqLTSBGZPM95KJ5MgQpZoPWcVR26r9xM5R0WT7KnBIUur0pPOKJDu5PBbeBlckDenM1AZHKMoziEJPj5TLF9ZPc9LQLaTil0cmB/0uhW2gJSmazuK6RDvsRY3H0rQq2qkDXCgkiRfgBYNV0RmvVD+LUSQR4LZGIbGrfE8Ok35ruJL2kyWasukVRvkt68fasG+wWl59N7sUeQxPaFDcuXMgbiqBJ9uPVBFxZv3MWrZGYyrY20cFWfehYSxKTeT6xNXDsnthizGwsrQIVfWeR6BnkCjPD9A0ryFqfp441WyhUbmHlhDLdh0YhCYsf0Gh72jEtf/mNaTa1qPng/eSwfj8oWRjJ7ncuVdCv3AnGxjrYlIgVNxWSFikusZ6garaiC/Y4ZgTHb1D7cc+TOgE8KVH8gEUk/81Vv/1KtgwYFiK0hoeouaT40=
